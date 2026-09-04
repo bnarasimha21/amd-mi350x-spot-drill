@@ -1,0 +1,9 @@
+.env
+.state/
+.preflight-venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+
+results/*
+!results/README.md

@@ -1,0 +1,9 @@
+# Installed INSIDE the drill container. Its ROCm PyTorch comes from the rocm/pytorch image
+# that the DO AMD AI/ML droplet ships — never pip-install torch here; 02_bootstrap.sh pins the
+# container's exact version in constraints.txt so any dep that tries to move it fails loudly.
+transformers>=4.55
+datasets>=3.0
+accelerate>=1.0
+boto3>=1.34
+redis>=5.0
+# Controller only needs flask (installed via apt in 00_controller.sh)
