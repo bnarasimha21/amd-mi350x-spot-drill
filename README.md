@@ -34,7 +34,7 @@ operator laptop
     |
     +-- controller Droplet
     |      Flask notice endpoint
-    |      Redis
+    |      Redis (queue_demo only, not used by the drill)
     |      server-timestamped event log
     |
     +-- Spot GPU Droplet A
@@ -48,6 +48,8 @@ operator laptop
     +-- Spot GPU Droplet B
            restore, verify, resume
 ```
+
+The drill itself (train, drain, upload, restore, resume) does not use Redis. The controller installs it only for the optional `queue_demo/` batch-inference example, which is the sole code that imports `redis`. Drill events travel over the Flask notice endpoint, and checkpoints travel through Spaces. If you skip `queue_demo/`, `REDIS_PASSWORD` is still required by the provisioning scripts but nothing in the drill reads from the queue.
 
 ## Cost and destructive-action warning
 
