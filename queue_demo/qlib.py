@@ -30,6 +30,11 @@ return moved
 
 
 def client():
+    for name in ("CONTROLLER_IP", "REDIS_PASSWORD"):
+        if not os.environ.get(name):
+            hint = (" Redis is opt-in: set ENABLE_REDIS=1 and REDIS_PASSWORD in .env, then re-run"
+                    " provision/00_controller.sh.") if name == "REDIS_PASSWORD" else ""
+            raise RuntimeError(f"{name} is not set.{hint}")
     return redis.Redis(host=os.environ["CONTROLLER_IP"], port=6379,
                        password=os.environ["REDIS_PASSWORD"], decode_responses=True)
 

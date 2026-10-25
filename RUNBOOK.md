@@ -104,7 +104,7 @@ Required values:
 - primary and fallback size/region pairs
 - `IMAGE_SLUG`
 - `SPACES_KEY`, `SPACES_SECRET`, `SPACES_ENDPOINT`, `SPACES_BUCKET`
-- `DRILL_TOKEN`, `REDIS_PASSWORD`
+- `DRILL_TOKEN`, and `REDIS_PASSWORD` only if `ENABLE_REDIS=1`
 - `DRILL_IMAGE`, after inspecting the selected AMD image
 - `SCRATCH_DEV`, after the manual device check below
 
@@ -117,10 +117,10 @@ Required values:
 The script:
 
 - creates a small controller Droplet
-- installs Redis and the Flask notice endpoint
+- installs the Flask notice endpoint, and Redis only when `ENABLE_REDIS=1`
 - creates tag-scoped firewalls
 - writes `CONTROLLER_IP` into `.env`
-- checks token and Redis authentication
+- checks token authentication, and Redis authentication when `ENABLE_REDIS=1`
 
 If your public IP changes during the experiment, update the firewall before continuing.
 

@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
 # Create the persistent controller droplet: notice webhook (token) + event log, and
 # optionally Redis (password) for queue_demo/. Redis is OFF by default: set ENABLE_REDIS=1
-# (in .env or the environment) to install it. It binds 0.0.0.0, so keep the firewall on.
+# (in .env or the environment; a value in the environment wins over .env) to install it.
+# It binds 0.0.0.0, so keep the firewall on. REDIS_PASSWORD is needed only when
+# ENABLE_REDIS=1.
 # Controller gets its OWN tag (${DRILL_TAG}-ctrl) so 03_destroy.sh --all can never take it
 # (and events.jsonl) down with the GPU fleet.
 set -euo pipefail
-cd "$(dirname "$0")/.." && source .env
+cd "$(dirname "$0")/.."
+# An ENABLE_REDIS passed in the environment wins over .env (source would clobber it).
+_ENV_ENABLE_REDIS="${ENABLE_REDIS-}"
+source .env
+if [ -n "$_ENV_ENABLE_REDIS" ]; then ENABLE_REDIS="$_ENV_ENABLE_REDIS"; fi
 ENABLE_REDIS="${ENABLE_REDIS:-0}"
+case "$ENABLE_REDIS" in
+  0|1) ;;
+  *) echo "WARN: ENABLE_REDIS='$ENABLE_REDIS' is not 0 or 1; treating it as 0 (Redis NOT installed). Set ENABLE_REDIS=1 to enable." >&2
+     ENABLE_REDIS=0 ;;
+esac
 export DIGITALOCEAN_ACCESS_TOKEN="$DO_TOKEN"
 : "${DRILL_TOKEN:?generate one: openssl rand -hex 16, put in .env}"
 if [ "$ENABLE_REDIS" = "1" ]; then
@@ -43,8 +54,8 @@ PY
 echo "Controller: id=$ID ip=$IP  (CONTROLLER_IP written to .env)"
 
 # --- Cloud Firewall ---------------------------------------------------------
-# Redis binds 0.0.0.0 and the webhook is token-only; both must be reachable by the GPU
-# fleet (dynamic IPs -> source by TAG, which DO resolves natively) and by this laptop.
+# The webhook is token-only (and Redis too, when ENABLE_REDIS=1, bound to 0.0.0.0); both
+# must be reachable by the GPU fleet (dynamic IPs -> source by TAG, which DO resolves natively) and by this laptop.
 # MY_IP is captured at create time; if your network changes, update the firewall:
 #   doctl compute firewall list  &&  doctl compute firewall update <id> ...
 MY_IP=$(curl -sf https://ipinfo.io/ip || true)
@@ -76,6 +87,27 @@ protocol:tcp,ports:6379,address:$MY_IP/32 \
 protocol:tcp,ports:6379,tag:$DRILL_TAG"
 fi
 fw_ensure "${CTRL_TAG}-fw" "$CTRL_TAG" "$CTRL_RULES"
+
+# fw_ensure leaves an existing firewall alone, so toggling ENABLE_REDIS after the first run
+# must add or remove the 6379 rules here (idempotent: checks the current rules first).
+REDIS_RULES="protocol:tcp,ports:6379,address:$MY_IP/32 protocol:tcp,ports:6379,tag:$DRILL_TAG"
+fw_redis_sync () {  # $1=firewall name
+  [ -n "$MY_IP" ] || return 0
+  local fid has
+  fid=$(doctl compute firewall list --format ID,Name --no-header | awk -v n="$1" '$2==n{print $1}' | head -1)
+  [ -n "$fid" ] || return 0
+  has=$(doctl compute firewall get "$fid" --format InboundRules --no-header | grep -c 'ports:6379' || true)
+  if [ "$ENABLE_REDIS" = "1" ] && [ "${has:-0}" = "0" ]; then
+    echo "Opening 6379 on firewall $1 (ENABLE_REDIS=1)..."
+    doctl compute firewall add-rules "$fid" --inbound-rules "$REDIS_RULES" \
+      || echo "WARN: could not open 6379; add inbound tcp 6379 (your IP and tag:$DRILL_TAG) to $1 by hand" >&2
+  elif [ "$ENABLE_REDIS" != "1" ] && [ "${has:-0}" != "0" ]; then
+    echo "Closing 6379 on firewall $1 (ENABLE_REDIS=0)..."
+    doctl compute firewall remove-rules "$fid" --inbound-rules "$REDIS_RULES" \
+      || echo "WARN: could not remove the 6379 rules (your IP may have changed); remove inbound tcp 6379 from $1 by hand" >&2
+  fi
+}
+fw_redis_sync "${CTRL_TAG}-fw"
 
 # GPU fleet: SSH from this laptop only. The DO AMD image publishes a Jupyter login on 8888
 # (plus 8000/30000) to 0.0.0.0 — an exposed Jupyter on a GPU box is a mining-bot magnet.
