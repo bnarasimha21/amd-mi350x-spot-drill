@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Create the persistent controller droplet: Redis (password) + notice webhook (token) + event log.
+# Create the persistent controller droplet: notice webhook (token) + event log, and
+# optionally Redis (password) for queue_demo/. Redis is OFF by default: set ENABLE_REDIS=1
+# (in .env or the environment) to install it. It binds 0.0.0.0, so keep the firewall on.
 # Controller gets its OWN tag (${DRILL_TAG}-ctrl) so 03_destroy.sh --all can never take it
 # (and events.jsonl) down with the GPU fleet.
 set -euo pipefail
 cd "$(dirname "$0")/.." && source .env
+ENABLE_REDIS="${ENABLE_REDIS:-0}"
 export DIGITALOCEAN_ACCESS_TOKEN="$DO_TOKEN"
 : "${DRILL_TOKEN:?generate one: openssl rand -hex 16, put in .env}"
-: "${REDIS_PASSWORD:?generate one: openssl rand -hex 16, put in .env}"
+if [ "$ENABLE_REDIS" = "1" ]; then
+  : "${REDIS_PASSWORD:?ENABLE_REDIS=1 needs REDIS_PASSWORD: openssl rand -hex 16, put in .env}"
+fi
 CTRL_TAG="${DRILL_TAG}-ctrl"
 CTRL_REGION="${CONTROLLER_REGION:-$REGION}"  # if basic droplets don't exist in the GPU region, set CONTROLLER_REGION=nyc3
 
@@ -61,12 +66,16 @@ protocol:icmp,address:0.0.0.0/0,address:::/0" \
 
 # Controller: /events and /status are UNAUTHENTICATED GETs, so this firewall is the only
 # thing keeping the measurement log private. GPU fleet reaches it by tag (dynamic IPs).
-fw_ensure "${CTRL_TAG}-fw" "$CTRL_TAG" "protocol:tcp,ports:22,address:$MY_IP/32 \
+CTRL_RULES="protocol:tcp,ports:22,address:$MY_IP/32 \
 protocol:tcp,ports:8080,address:$MY_IP/32 \
 protocol:tcp,ports:8080,tag:$DRILL_TAG \
-protocol:tcp,ports:6379,address:$MY_IP/32 \
-protocol:tcp,ports:6379,tag:$DRILL_TAG \
 protocol:icmp,address:$MY_IP/32"
+if [ "$ENABLE_REDIS" = "1" ]; then
+  CTRL_RULES="$CTRL_RULES \
+protocol:tcp,ports:6379,address:$MY_IP/32 \
+protocol:tcp,ports:6379,tag:$DRILL_TAG"
+fi
+fw_ensure "${CTRL_TAG}-fw" "$CTRL_TAG" "$CTRL_RULES"
 
 # GPU fleet: SSH from this laptop only. The DO AMD image publishes a Jupyter login on 8888
 # (plus 8000/30000) to 0.0.0.0 — an exposed Jupyter on a GPU box is a mining-bot magnet.
@@ -81,14 +90,17 @@ for i in $(seq 1 120); do
   sleep 5
 done
 
-echo "Installing Redis (password) + webhook (token) ..."
+echo "Installing webhook (token)$([ "$ENABLE_REDIS" = "1" ] && echo ' + Redis (password)') ..."
 scp drain/notice_webhook.py root@"$IP":/opt/notice_webhook.py
-ssh root@"$IP" DRILL_TOKEN="$DRILL_TOKEN" REDIS_PASSWORD="$REDIS_PASSWORD" bash -s <<'REMOTE'
+ssh root@"$IP" DRILL_TOKEN="$DRILL_TOKEN" ENABLE_REDIS="$ENABLE_REDIS" REDIS_PASSWORD="${REDIS_PASSWORD:-}" bash -s <<'REMOTE'
 set -e
-apt-get update -qq && apt-get install -y -qq redis-server python3-flask
-sed -i 's/^bind .*/bind 0.0.0.0/' /etc/redis/redis.conf
-echo "requirepass $REDIS_PASSWORD" >> /etc/redis/redis.conf
-systemctl restart redis-server
+apt-get update -qq && apt-get install -y -qq python3-flask
+if [ "$ENABLE_REDIS" = "1" ]; then
+  apt-get install -y -qq redis-server
+  sed -i 's/^bind .*/bind 0.0.0.0/' /etc/redis/redis.conf
+  echo "requirepass $REDIS_PASSWORD" >> /etc/redis/redis.conf
+  systemctl restart redis-server
+fi
 cat > /etc/systemd/system/notice-webhook.service <<UNIT
 [Unit]
 Description=Simulated reclamation notice webhook
@@ -116,7 +128,9 @@ CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 5 -X POST "http://$IP:8080/rese
 [ "$CODE" = "401" ] || [ "$CODE" = "403" ] \
   && echo "auth check OK (unauthenticated /reset -> HTTP $CODE)" \
   || echo "!! WARNING: unauthenticated /reset returned HTTP $CODE — the webhook is NOT guarded"
-ssh root@"$IP" 'redis-cli ping 2>&1 | head -1' | grep -q NOAUTH \
-  && echo "redis auth OK (unauthenticated PING -> NOAUTH)" \
-  || echo "!! WARNING: redis answered without a password"
+if [ "$ENABLE_REDIS" = "1" ]; then
+  ssh root@"$IP" 'redis-cli ping 2>&1 | head -1' | grep -q NOAUTH \
+    && echo "redis auth OK (unauthenticated PING -> NOAUTH)" \
+    || echo "!! WARNING: redis answered without a password"
+fi
 echo "Controller ready at $IP — CONTROLLER_IP is already in .env."

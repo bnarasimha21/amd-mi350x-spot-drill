@@ -49,7 +49,9 @@ operator laptop
            restore, verify, resume
 ```
 
-The drill itself (train, drain, upload, restore, resume) does not use Redis. The controller installs it only for the optional `queue_demo/` batch-inference example, which is the sole code that imports `redis`. Drill events travel over the Flask notice endpoint, and checkpoints travel through Spaces. If you skip `queue_demo/`, `REDIS_PASSWORD` is still required by the provisioning scripts but nothing in the drill reads from the queue.
+The drill itself (train, drain, upload, restore, resume) does not use Redis. Drill events travel over the Flask notice endpoint, and checkpoints travel through Spaces. Redis is only for the optional `queue_demo/` batch-inference example, which is the sole code that imports `redis`.
+
+Redis is opt-in. `provision/00_controller.sh` installs it only when `ENABLE_REDIS=1` is set (default `0`), and `REDIS_PASSWORD` is required only in that case. When enabled, the script binds Redis to all interfaces (`0.0.0.0`) protected by that password, and opens port 6379 in the controller firewall to your IP and the GPU fleet tag. Keep that firewall in place, and do not enable Redis if you are not running `queue_demo/`. If you provisioned an earlier controller that already has Redis, firewall port 6379 or remove it with `apt-get remove redis-server` on the droplet.
 
 ## Cost and destructive-action warning
 
@@ -83,7 +85,7 @@ openssl rand -hex 16
 openssl rand -hex 16
 ```
 
-Put the generated values in `DRILL_TOKEN` and `REDIS_PASSWORD`, complete the remaining configuration, then follow [RUNBOOK.md](RUNBOOK.md).
+Put the generated values in `DRILL_TOKEN` (and `REDIS_PASSWORD` only if you set `ENABLE_REDIS=1` for `queue_demo/`), complete the remaining configuration, then follow [RUNBOOK.md](RUNBOOK.md).
 
 The main sequence is:
 

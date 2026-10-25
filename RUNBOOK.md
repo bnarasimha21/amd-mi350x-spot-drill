@@ -95,7 +95,7 @@ openssl rand -hex 16
 openssl rand -hex 16
 ```
 
-Use the generated values for `DRILL_TOKEN` and `REDIS_PASSWORD`.
+Use the generated value for `DRILL_TOKEN`. `REDIS_PASSWORD` is needed only if you set `ENABLE_REDIS=1` for `queue_demo/`.
 
 Required values:
 
