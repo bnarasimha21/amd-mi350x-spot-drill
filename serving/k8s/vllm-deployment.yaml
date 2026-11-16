@@ -19,6 +19,10 @@ spec:
     metadata:
       labels: {app: vllm}
     spec:
+      # The Service is named vllm, so Kubernetes would inject VLLM_PORT=tcp://<ip>:8000 and
+      # the other service-link variables. vLLM reads VLLM_PORT as its own setting and
+      # refuses a URI, so the engine fails to start. Found on the first real run.
+      enableServiceLinks: false
       # Termination budget, in order:
       #   preStop sleep (15 s)        the pod is already out of the Service; let that reach
       #                               every node before the server is told anything
