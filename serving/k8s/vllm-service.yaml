@@ -1,0 +1,12 @@
+# ClusterIP only. vLLM is started without an API key, so it is not exposed outside the
+# cluster and no load balancer is created (nothing extra to bill or to forget).
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm
+  labels: {app: vllm}
+spec:
+  type: ClusterIP
+  selector: {app: vllm}
+  ports:
+    - {name: http, port: 8000, targetPort: http}

@@ -1,0 +1,75 @@
+# vLLM serving half. Run once on a DOKS Spot MI350X pool (2026-11-16). See SERVING.md for the runbook and
+# serving/README.md for which platform facts were verified and which were not.
+#
+#   kubectl kustomize serving/k8s            # render
+#   kubectl apply -k serving/k8s             # apply (KEDA must be installed first)
+#
+# Everything an operator is expected to change is in this file.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: vllm
+
+resources:
+  - namespace.yaml
+  - vllm-deployment.yaml
+  - vllm-service.yaml
+  - vllm-pdb.yaml
+  - vllm-scaledobject.yaml
+  - prometheus.yaml
+  - loadgen.yaml
+
+# The image is the least certain input. vLLM's ROCm install page documents
+# vllm/vllm-openai-rocm, with MI350 needing ROCm 7.0 or newer. Which tag works on the
+# kernel driver of a DOKS MI350X node has not been tested. Change it here if phase 3 of
+# the runbook shows the GPU is not usable.
+images:
+  - name: vllm-rocm
+    newName: vllm/vllm-openai-rocm
+    newTag: v0.33.0
+
+# The name gets a content hash, so changing a value here rolls the Deployment.
+configMapGenerator:
+  - name: vllm-config
+    literals:
+      - MODEL_ID=Qwen/Qwen3-8B
+      - SERVED_MODEL_NAME=qwen3-8b
+      # Context window to allocate. An input, not a recommendation.
+      - MAX_MODEL_LEN=8192
+      # Requests the engine batches at once. Requests beyond this wait in vLLM's queue and
+      # show up in vllm:num_requests_waiting. Placeholder until the sweep in SERVING.md
+      # phase 5 shows where latency stops being acceptable on this GPU.
+      - MAX_NUM_SEQS=128
+      # Seconds vLLM waits for in-flight work after SIGTERM (vllm serve --shutdown-timeout;
+      # the default of 0 aborts). Keep preStop + this below terminationGracePeriodSeconds.
+      - SHUTDOWN_TIMEOUT_S=120
+      # Autoscaling target: in-flight requests (running + waiting) per replica.
+      # Placeholder, set from the sweep. Copied into the ScaledObject below.
+      - TARGET_INFLIGHT=96
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: vllm-config
+      fieldPath: data.TARGET_INFLIGHT
+    targets:
+      - select:
+          kind: ScaledObject
+          name: vllm
+        fieldPaths:
+          - spec.triggers.0.metadata.threshold
+
+# To use a GPU exposed under another resource name (an NVIDIA pool, for example), patch
+# the three places that say "amd": the resource limit, the toleration and the node selector.
+# patches:
+#   - target: {kind: Deployment, name: vllm}
+#     patch: |-
+#       - op: replace
+#         path: /spec/template/spec/containers/0/resources/limits
+#         value: {nvidia.com/gpu: "1"}
+#       - op: replace
+#         path: /spec/template/spec/tolerations/0/key
+#         value: nvidia.com/gpu
+#       - op: replace
+#         path: /spec/template/spec/nodeSelector
+#         value: {doks.digitalocean.com/gpu-brand: nvidia}
+#   (and change the image above to vllm/vllm-openai)

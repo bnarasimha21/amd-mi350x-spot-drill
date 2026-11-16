@@ -27,6 +27,16 @@ The controller's `GET /events` and `GET /status` routes are not token-protected.
 
 The bootstrap script stops the image's stock Jupyter container because this drill does not need its public ports.
 
+## Serving half
+
+The vLLM server in `serving/k8s` is started without an API key. Its Service is `ClusterIP` and no load balancer is created, so it is reachable only from inside the cluster. Do not change the Service type or add an ingress without adding authentication first. `serving/validate_manifests.sh` fails if a Service is exposed.
+
+A Hugging Face token, if the model needs one, is created by hand as a Kubernetes Secret (`hf-token`). It is never written to a file in this repository.
+
+The model cache is a `hostPath` directory on the GPU node. That is acceptable only on a single-tenant cluster that is destroyed after the session.
+
+`serving/loadgen.py` never writes an API key to its result file. Result files can still contain hostnames and node names: review them before publishing.
+
 ## Scratch-device safety
 
 `provision/02_bootstrap.sh` may format `SCRATCH_DEV`. Verify the device manually with `lsblk` and `findmnt` before setting it. Never guess the device path.

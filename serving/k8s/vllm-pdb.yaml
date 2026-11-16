@@ -1,0 +1,14 @@
+# One pod at a time. A drain (ours, the cluster autoscaler's, or DOKS cordoning a
+# reclaimed spot pool) evicts one vLLM pod, waits for it to finish, then moves on.
+#
+# maxUnavailable, not minAvailable: with one replica, minAvailable: 1 would block every
+# drain until the node is taken anyway. This budget never blocks the last pod; it only
+# stops two pods being evicted at once.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vllm
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {app: vllm}

@@ -18,10 +18,42 @@ jobs:
           python-version: "3.12"
 
       - name: Check Python syntax
-        run: python -m compileall -q drain trainer queue_demo
+        run: python -m compileall -q drain trainer queue_demo serving
 
       - name: Check shell syntax
         run: |
-          for file in provision/*.sh drain/*.sh; do
+          for file in provision/*.sh drain/*.sh serving/*.sh serving/cluster/*.sh; do
             bash -n "$file"
           done
+
+  # The serving half, checked without a GPU or a cloud account. These jobs show the tools
+  # and manifests are internally correct. They do not produce serving numbers.
+  serving:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Unit tests (standard library only, fake server, stub doctl and kubectl)
+        run: python -W error -m unittest discover -s serving/tests -t . -v
+
+      - name: Self-test against the fake server
+        run: serving/selftest.sh
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: false
+
+      - name: Install kubeconform
+        run: |
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Validate Kubernetes manifests
+        run: |
+          kubectl version --client
+          serving/validate_manifests.sh
