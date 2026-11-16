@@ -1,0 +1,39 @@
+# An idle pod on the CPU pool to run serving/loadgen.py from, inside the cluster.
+#
+# Why not `kubectl port-forward svc/vllm` from the laptop: port-forward picks one pod and
+# stays on it, so the second replica would never see load, and the laptop's network would
+# be inside every latency number. From here, requests go through the Service like any
+# in-cluster client's.
+#
+# The script arrives in a ConfigMap made from the file in this repository
+# (serving/cluster/02_install.sh does it):
+#   kubectl -n vllm create configmap loadgen-script --from-file=serving/loadgen.py
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  labels: {app: loadgen}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: loadgen}
+  template:
+    metadata:
+      labels: {app: loadgen}
+    spec:
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: loadgen
+          image: python:3.12-slim
+          command: [sleep, infinity]
+          workingDir: /work
+          resources:
+            requests: {cpu: "1", memory: 512Mi}
+          volumeMounts:
+            - {name: script, mountPath: /opt/loadgen, readOnly: true}
+            - {name: work, mountPath: /work}
+      volumes:
+        - name: script
+          configMap: {name: loadgen-script}
+        - name: work
+          emptyDir: {}

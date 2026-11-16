@@ -1,0 +1,38 @@
+# Autoscaling on in-flight requests per replica, read from vLLM's own metrics.
+#
+#   wanted replicas = ceil( (waiting + running, summed over pods) / threshold )
+#
+# Waiting alone is the queue depth, but it falls to zero as soon as a new replica absorbs
+# the queue, and the HPA would then scale back in and flap. Adding running keeps the
+# signal up while the load is still there. Unlike GPU utilisation it keeps rising when
+# the server is saturated.
+#
+# Needs KEDA (serving/cluster/02_install.sh). KEDA creates and owns an HPA for this.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: vllm
+spec:
+  scaleTargetRef:
+    name: vllm
+  minReplicaCount: 1
+  # Must not exceed the GPU pool's max-nodes. A Spot GPU pool's maximum cannot be raised
+  # after creation.
+  maxReplicaCount: 2
+  pollingInterval: 5
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+        scaleDown:
+          # A replica costs minutes of node provisioning and model load to get back.
+          stabilizationWindowSeconds: 300
+  triggers:
+    - type: prometheus
+      metricType: AverageValue
+      metadata:
+        serverAddress: http://prometheus.vllm.svc:9090
+        query: sum(vllm:num_requests_waiting{namespace="vllm"}) + sum(vllm:num_requests_running{namespace="vllm"})
+        # Set from TARGET_INFLIGHT in kustomization.yaml.
+        threshold: "0"
