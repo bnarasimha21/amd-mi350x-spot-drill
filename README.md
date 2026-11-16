@@ -29,6 +29,10 @@ DigitalOcean did not provide a way to schedule a real reclamation. The controlle
 
 ## Architecture
 
+The reasoning behind the design (requirements, each decision and its cost, the measured numbers, the
+failure and threat model, what changes for a fleet) is in the [design record](docs/DESIGN.md), with a
+decision-flow diagram and a deployment diagram.
+
 ```text
 operator laptop
     |
@@ -108,6 +112,7 @@ Do not copy these commands blindly. The runbook includes required capacity, imag
 - `trainer/`: full fine-tune, checkpoint, upload, timing, and continuity tools
 - `drain/`: simulated notice, drain agent, orchestration, and event timeline
 - `queue_demo/`: optional lease, acknowledge, and retry example for batch inference
+- `docs/`: design record and its diagrams
 - `results/`: format and reference measurements from the original run
 
 ## Security
