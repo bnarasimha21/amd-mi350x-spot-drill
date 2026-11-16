@@ -285,8 +285,15 @@ projects to 1.4 hours. These are arithmetic on measured rates, not measurements,
 would use a sharded checkpoint that this code does not have.
 
 **Not measured:** training throughput, a real reclamation, the email-to-webhook path, cross-region
-transfer, a fallback to the second GPU model, any repeat of the full drill, and anything about
-serving (the serving code exists and has not been run on a GPU).
+transfer, a fallback to the second GPU model, and any repeat of the full drill.
+
+**Serving** (one session, 2026-11-16, `SERVING.md` has the tables). vLLM with Qwen3-8B on a DOKS
+Spot MI350X pool at $3.00 per GPU hour. One GPU produced 16,423 output tokens per second at 128
+concurrent requests with a 37 ms median time to first token, which is $0.052 per million output
+tokens if the GPU is held that busy, and 22,604 at 256. From queue build-up to a second replica
+serving on a new Spot node took 455 s: 11 s for the autoscaler, about 180 s for the node, the rest
+image pull and model load. Draining one of two nodes under load failed 0 of 8,352 requests, with
+requests about two seconds long. The session cost about $4.20 at posted rates.
 
 **Tests.** None for the drill. CI compiles the Python and runs `bash -n` on the shell scripts. The
 drill's correctness evidence is the reference run and the assertions inside `load_checkpoint()`.
@@ -329,18 +336,19 @@ the drill.
    save and a sharded restore.
 8. **The scheduler curve is not restored exactly** on the drill's resume command.
 9. **No tests.** Nothing checks the drain choreography without a GPU.
-10. **The serving half is written but has not run.** `serving/` holds vLLM manifests for a
-    Kubernetes Spot GPU node pool, autoscaling on in-flight requests, a load generator and a cost
-    per million tokens calculator, with a runbook in `SERVING.md`. All of it was built and tested
-    without a GPU: the manifests against schemas, the tools against a fake server. None of it has
-    been applied to a cluster or run on a GPU. There is no measured throughput, latency,
-    autoscaling time or cost per token. Producing those is the paid session in phase 6 of the plan.
+10. **The serving half ran once.** `serving/` holds vLLM manifests for a Kubernetes Spot GPU node
+    pool, autoscaling on in-flight requests, a load generator and a cost per million tokens
+    calculator, with a runbook and results in `SERVING.md`. One session is one data point. The
+    drain test used short requests, so vLLM's shutdown window was never needed. A real
+    reclamation takes the whole Spot pool, and there is no on-demand pool behind it. A new
+    replica takes seven and a half minutes, so autoscaling cannot absorb a sudden spike. The
+    endpoint has no API key and is reachable only inside the cluster.
 
 ## 8. What changes at 100 times the scale
 
 There are two ways to grow: a fleet of 100 spot nodes running many jobs, or one job 10 to 30 times
-larger across many GPUs. Nothing in this section is built, except the serving code noted in its
-row, which is written and has not been run. It shows where the current seams are and what goes
+larger across many GPUs. Nothing in this section is built, except the serving half noted in its
+row, which ran once. It shows where the current seams are and what goes
 behind them.
 
 | Area | Today | At scale | Seam that already exists |
@@ -355,7 +363,7 @@ behind them.
 | Verification | Cursor and RNG asserted once | The same assertions, plus a checksum manifest, plus a held-out eval after resume to catch a silent quality change | `meta.json` carries the expected state |
 | Cost | A receipt per Droplet | Cost per job with the reclamation tax in it: overlap billing, redone steps, checkpoint time, stated against the on-demand price | Price recorded on every `provisioned` event |
 | Observability | An event log and a timeline script | The same events as metrics and traces: drain time, time to resume, steps lost, per job and per region | Single-clock events with stage durations |
-| Serving | Code only, not run on a GPU: `serving/` and `SERVING.md`. No serving numbers | Inference on the same GPUs with autoscaling, where reclamation is a drained connection, not lost state. Then an on-demand pool behind the Spot pool, because a Spot pool is reclaimed whole | `serving/k8s` drains a pod in two steps and scales on in-flight requests; `queue_demo/` shows lease, acknowledge and retry for batch inference |
+| Serving | One or two replicas on one Spot pool, run once: `serving/` and `SERVING.md` | Inference on the same GPUs with autoscaling, where reclamation is a drained connection, not lost state. Then an on-demand pool behind the Spot pool, because a Spot pool is reclaimed whole | `serving/k8s` drains a pod in two steps and scales on in-flight requests; `queue_demo/` shows lease, acknowledge and retry for batch inference |
 
 The order to do them in: repeat the drill first, including a run with no notice and one that falls
 back to the second region, because one data point is not a distribution. Then periodic checkpoints

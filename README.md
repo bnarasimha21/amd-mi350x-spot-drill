@@ -27,11 +27,23 @@ This is an `n=1` result. The roughly 15-minute end-to-end recovery figure discus
 
 DigitalOcean did not provide a way to schedule a real reclamation. The controller therefore sends a simulated notice to the same drain path. Everything after that trigger is executed for real: checkpointing, upload, replacement provisioning, restore, verification, resumed training, and destruction of the old GPU Droplet.
 
-## Serving half (built, not yet run on a GPU)
+## Serving half (run once on a Spot MI350X)
 
 The second half of the drill serves the same model with vLLM on a DigitalOcean Kubernetes Spot GPU node pool, with autoscaling on queue depth, a load generator, and a cost per million tokens calculator. The code is in [`serving/`](serving/README.md) and the paid session is [SERVING.md](SERVING.md).
 
-It has been built and tested without a GPU: the manifests are schema-validated, and the tools are tested against a fake server that is labelled as fake. It has not been run on a GPU or on a real cluster. There are no serving numbers yet, and the results table in SERVING.md says "not yet measured" in every cell.
+It was run once, on 2026-11-16, on one and then two Spot MI350X nodes in `ric1`:
+
+| Measure | Result |
+| --- | ---: |
+| Output tokens per second, one GPU, 128 concurrent requests | 16,423 |
+| Time to first token at that load, p50 and p99 | 37 ms and 103 ms |
+| Cost per million output tokens at that load, GPU held fully used | $0.052 |
+| Output tokens per second, one GPU, 256 concurrent requests | 22,604 |
+| Queue build-up to a second replica serving on a new Spot node | 455 s |
+| Requests failed when one of two nodes was drained under load | 0 of 8,352 |
+| Session cost at posted rates | about $4.20 |
+
+Qwen3-8B, 256 output tokens per request, thinking text included, $3.00 per GPU hour. This is one session. The drain is a simulated reclamation of one node with requests about two seconds long. The full tables and their limits are in [SERVING.md](SERVING.md).
 
 ## Architecture
 

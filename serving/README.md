@@ -62,23 +62,26 @@ Checked on 2026-11-16 against the sources listed. Preview products change, so
 | KEDA installs with `kubectl apply --server-side -f https://github.com/kedacore/keda/releases/download/v<version>/keda-<version>.yaml`. The 2.21.1 manifest downloads, and its Deployments are `keda-operator`, `keda-metrics-apiserver` and `keda-admission` in namespace `keda` (read from the 2.21.0 and 2.21.1 manifests) | KEDA deploy docs [8], the release files |
 | The Prometheus scrape configuration in `k8s/prometheus.yaml` is valid | `promtool check config` from Prometheus 3.16.0, run by hand once |
 
-### Not verified
+### Settled by the session of 2026-11-16
 
-These could only be settled on real hardware or with a real account. The design keeps each
-one changeable.
+These could only be settled on real hardware. Each was open when the code was written.
 
-| Open question | What depends on it | Where it is settled |
-|---------------|--------------------|---------------------|
-| Does `vllm/vllm-openai-rocm:v0.33.0` run on the kernel driver of a DOKS MI350X node? The image is built on ROCm 10.0; the node's driver version is unknown | Whether vLLM starts at all | SERVING.md phase 3. The image is one line in `k8s/kustomization.yaml` |
-| Does `--shutdown-timeout` let in-flight HTTP streams finish? The flag is in the source; its effect on open streams was not exercised | Failed requests during a drain | SERVING.md phase 7 measures it. The fallback is a longer `preStop` sleep |
-| Hourly prices | Every cost figure | No price is stored in this directory. Looked up live, or passed in |
-| Which CPU sizes DOKS offers in the GPU regions | The CPU pool | `SERVING_CPU_SIZE` has no default; `00_preflight.sh` lists what exists |
-| Does the installed doctl accept a Spot slug in `--node-pool`, and is there Spot capacity | Whether the pool can be created | `00_preflight.sh`, then `01_create_cluster.sh` |
-| The `gpu-model` label value on MI350X nodes (the docs show only `mi300x`) | Nothing: the selector uses `gpu-brand: amd` | Printed by `01_create_cluster.sh` |
-| Free disk on a GPU node's root filesystem | The hostPath model cache | SERVING.md phase 3 |
-| How long a node takes to join, and how long the model takes to download and load | The 30 minute startup probe, and the whole autoscaling result | Timed in phases 1, 2 and 6 |
-| That Qwen3-8B fits with room for a useful batch. By arithmetic the bf16 weights are about 16 GB (8.19e9 parameters, 2 bytes each) against a card the slug describes as 288 GB | Nothing structural; `MAX_NUM_SEQS` and `MAX_MODEL_LEN` are inputs | Phase 5 |
-| Whether KEDA's Prometheus trigger and the query behave as intended against real vLLM metrics. The object is schema-valid; the trigger has never fired | The autoscaling test | SERVING.md phase 4 checks the query returns a series; phase 6 is the test |
+| Question | Answer |
+|----------|--------|
+| Does `vllm/vllm-openai-rocm:v0.33.0` run on a DOKS MI350X node? | Yes, the first tag tried. The node ran kernel 6.12 on Debian 13; vLLM saw 287.69 GiB on the device |
+| Does the pod start as written? | No. The Service is named `vllm`, so Kubernetes injected `VLLM_PORT=tcp://...`, which vLLM reads as its own setting and rejects. Fixed with `enableServiceLinks: false` |
+| Does the drain lose requests? | 0 of 8,352 failed in each of two runs. Requests lasted about two seconds, so all finished inside the `preStop` sleep. `--shutdown-timeout` was not needed and so is still untested against long streams |
+| Hourly prices | $3.00 for `gpu-mi350x1-288gb-spot`, $0.083 for `s-4vcpu-8gb-intel`, on the day |
+| Which CPU size | `s-4vcpu-8gb-intel` is offered to DOKS in `ric1` and carried KEDA, Prometheus and a load generator driving 256 streams |
+| Does doctl accept the Spot slug in `--node-pool`, and was there capacity | Yes, for the first node and for a second one 3 minutes after the autoscaler asked |
+| The `gpu-model` label on MI350X nodes | `mi350x` |
+| Free disk on a GPU node | 684 GB allocatable ephemeral storage |
+| Node join, download and load times | In the SERVING.md results: 408 s create to GPU allocatable, 235 s cold start on a new node |
+| Does the model fit with room for a batch | 15.3 GiB of weights; vLLM reported KV cache for about 218 concurrent 8,192-token requests |
+| Does KEDA's Prometheus trigger work on real vLLM metrics | Yes. It asked for a second replica 11 s after in-flight requests passed the target |
+
+Still not verified: a real reclamation, loss of the whole pool, long-running requests during a
+drain, scale-in, and any repeat of the session.
 
 Sources:
 

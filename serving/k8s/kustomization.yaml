@@ -1,4 +1,4 @@
-# vLLM serving half. NOT YET RUN ON A GPU. See SERVING.md for the runbook and
+# vLLM serving half. Run once on a DOKS Spot MI350X pool (2026-11-16). See SERVING.md for the runbook and
 # serving/README.md for which platform facts were verified and which were not.
 #
 #   kubectl kustomize serving/k8s            # render
