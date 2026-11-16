@@ -38,13 +38,13 @@ configMapGenerator:
       # Requests the engine batches at once. Requests beyond this wait in vLLM's queue and
       # show up in vllm:num_requests_waiting. Placeholder until the sweep in SERVING.md
       # phase 5 shows where latency stops being acceptable on this GPU.
-      - MAX_NUM_SEQS=32
+      - MAX_NUM_SEQS=128
       # Seconds vLLM waits for in-flight work after SIGTERM (vllm serve --shutdown-timeout;
       # the default of 0 aborts). Keep preStop + this below terminationGracePeriodSeconds.
       - SHUTDOWN_TIMEOUT_S=120
       # Autoscaling target: in-flight requests (running + waiting) per replica.
       # Placeholder, set from the sweep. Copied into the ScaledObject below.
-      - TARGET_INFLIGHT=24
+      - TARGET_INFLIGHT=96
 
 replacements:
   - source:
