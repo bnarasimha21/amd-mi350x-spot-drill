@@ -285,10 +285,14 @@ projects to 1.4 hours. These are arithmetic on measured rates, not measurements,
 would use a sharded checkpoint that this code does not have.
 
 **Not measured:** training throughput, a real reclamation, the email-to-webhook path, cross-region
-transfer, a fallback to the second GPU model, and any repeat of the full drill.
+transfer, a fallback to the second GPU model, any repeat of the full drill, and anything about
+serving (the serving code exists and has not been run on a GPU).
 
-**Tests.** None. CI compiles the Python and runs `bash -n` on the shell scripts. The drill's
-correctness evidence is the reference run and the assertions inside `load_checkpoint()`.
+**Tests.** None for the drill. CI compiles the Python and runs `bash -n` on the shell scripts. The
+drill's correctness evidence is the reference run and the assertions inside `load_checkpoint()`.
+The serving half, added later, has unit tests and offline manifest validation in CI. Those show
+the serving tools are internally correct. They are not measurements, and they say nothing about
+the drill.
 
 ## 6. Failure and threat model
 
@@ -325,14 +329,19 @@ correctness evidence is the reference run and the assertions inside `load_checkp
    save and a sharded restore.
 8. **The scheduler curve is not restored exactly** on the drill's resume command.
 9. **No tests.** Nothing checks the drain choreography without a GPU.
-10. **Training only.** There is no serving half: no inference endpoint, no autoscaling, no cost per
-    token. That is phase 6 of the plan.
+10. **The serving half is written but has not run.** `serving/` holds vLLM manifests for a
+    Kubernetes Spot GPU node pool, autoscaling on in-flight requests, a load generator and a cost
+    per million tokens calculator, with a runbook in `SERVING.md`. All of it was built and tested
+    without a GPU: the manifests against schemas, the tools against a fake server. None of it has
+    been applied to a cluster or run on a GPU. There is no measured throughput, latency,
+    autoscaling time or cost per token. Producing those is the paid session in phase 6 of the plan.
 
 ## 8. What changes at 100 times the scale
 
 There are two ways to grow: a fleet of 100 spot nodes running many jobs, or one job 10 to 30 times
-larger across many GPUs. Nothing in this section is built. It shows where the current seams are and
-what goes behind them.
+larger across many GPUs. Nothing in this section is built, except the serving code noted in its
+row, which is written and has not been run. It shows where the current seams are and what goes
+behind them.
 
 | Area | Today | At scale | Seam that already exists |
 |------|-------|----------|--------------------------|
@@ -346,7 +355,7 @@ what goes behind them.
 | Verification | Cursor and RNG asserted once | The same assertions, plus a checksum manifest, plus a held-out eval after resume to catch a silent quality change | `meta.json` carries the expected state |
 | Cost | A receipt per Droplet | Cost per job with the reclamation tax in it: overlap billing, redone steps, checkpoint time, stated against the on-demand price | Price recorded on every `provisioned` event |
 | Observability | An event log and a timeline script | The same events as metrics and traces: drain time, time to resume, steps lost, per job and per region | Single-clock events with stage durations |
-| Serving | None | Inference on the same GPUs with autoscaling, where reclamation is a drained connection, not lost state | `queue_demo/` shows lease, acknowledge and retry for batch inference |
+| Serving | Code only, not run on a GPU: `serving/` and `SERVING.md`. No serving numbers | Inference on the same GPUs with autoscaling, where reclamation is a drained connection, not lost state. Then an on-demand pool behind the Spot pool, because a Spot pool is reclaimed whole | `serving/k8s` drains a pod in two steps and scales on in-flight requests; `queue_demo/` shows lease, acknowledge and retry for batch inference |
 
 The order to do them in: repeat the drill first, including a run with no notice and one that falls
 back to the second region, because one data point is not a distribution. Then periodic checkpoints

@@ -22,3 +22,7 @@ Raw artifacts from the 2026-08-18 reference run are intentionally excluded becau
 These results are from one run. Do not treat them as an SLA or expected platform performance.
 
 Before publishing output from a new run, remove credentials, IP addresses, Droplet IDs, bucket names, hostnames, usernames, and local paths.
+
+## Serving
+
+No serving measurements exist yet. The serving half has been built and tested without a GPU and has not been run on one. When the session in `SERVING.md` is run, its raw files go under `results/serving/` (ignored by Git) and the publishable numbers go into the results table in `SERVING.md`. Files produced against `serving/fake_openai_server.py` are marked `is_fake_server: true` and are never serving numbers.

@@ -27,6 +27,12 @@ This is an `n=1` result. The roughly 15-minute end-to-end recovery figure discus
 
 DigitalOcean did not provide a way to schedule a real reclamation. The controller therefore sends a simulated notice to the same drain path. Everything after that trigger is executed for real: checkpointing, upload, replacement provisioning, restore, verification, resumed training, and destruction of the old GPU Droplet.
 
+## Serving half (built, not yet run on a GPU)
+
+The second half of the drill serves the same model with vLLM on a DigitalOcean Kubernetes Spot GPU node pool, with autoscaling on queue depth, a load generator, and a cost per million tokens calculator. The code is in [`serving/`](serving/README.md) and the paid session is [SERVING.md](SERVING.md).
+
+It has been built and tested without a GPU: the manifests are schema-validated, and the tools are tested against a fake server that is labelled as fake. It has not been run on a GPU or on a real cluster. There are no serving numbers yet, and the results table in SERVING.md says "not yet measured" in every cell.
+
 ## Architecture
 
 The reasoning behind the design (requirements, each decision and its cost, the measured numbers, the
@@ -112,6 +118,7 @@ Do not copy these commands blindly. The runbook includes required capacity, imag
 - `trainer/`: full fine-tune, checkpoint, upload, timing, and continuity tools
 - `drain/`: simulated notice, drain agent, orchestration, and event timeline
 - `queue_demo/`: optional lease, acknowledge, and retry example for batch inference
+- `serving/`: vLLM on Kubernetes manifests, cluster scripts, load generator, cost calculator, and their tests (not yet run on a GPU)
 - `docs/`: design record and its diagrams
 - `results/`: format and reference measurements from the original run
 
